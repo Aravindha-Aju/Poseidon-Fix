@@ -1,7 +1,11 @@
-# -*- coding: utf-8 -*-
-import logging, random, math
+import logging
+import random
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+import math
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 REGIONAL_PROFILES = {
     "Arabian Sea": {"current_x": 0.35, "current_y": 0.45, "wind_x": 6.0, "wind_y": 4.0},
@@ -14,48 +18,54 @@ def get_region(lon: float, lat: float) -> str:
     elif 80 <= lon <= 95 and 0 <= lat <= 22: return "Bay of Bengal"
     return "Arabian Sea"
 
-def run_single_drift_simulation(lon: float, lat: float, hours: int, windage: float, noise_scale: float) -> List[List[float]]:
-    profile = REGIONAL_PROFILES[get_region(lon, lat)]
-    drift_x = profile["current_x"] + (profile["wind_x"] * windage)
-    drift_y = profile["current_y"] + (profile["wind_y"] * windage)
-    coordinates, current_lon, current_lat = [], float(lon), float(lat)
-    for _ in range(hours + 1):
-        coordinates.append([round(current_lon, 5), round(current_lat, 5)])
-        current_lon -= (drift_x * 3600) / 111320 + random.uniform(-noise_scale, noise_scale)
-        current_lat -= (drift_y * 3600) / 110540 + random.uniform(-noise_scale, noise_scale)
-    return coordinates[::-1]
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat, dlon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-def calculate_ensemble_backward_trajectory(lon: float, lat: float, timestamp: str, hours_backward: int, num_ensemble: int = 10) -> Dict[str, Any]:
-    random.seed(42)
+def calculate_backward_trajectory_ensemble(lon: float, lat: float, timestamp: Any, hours_backward: Any, num_ensemble: int = 10) -> dict:
     try:
-        start_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        end_time = start_time - timedelta(hours=hours_backward)
-        all_endpoints, all_trajectories = [], []
-        windages = [0.02, 0.03, 0.04, 0.05, 0.025, 0.035, 0.045, 0.02, 0.04, 0.05]
-        noises = [0.005, 0.01, 0.015, 0.02, 0.008, 0.012, 0.018, 0.005, 0.015, 0.02]
+        start_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00')) if isinstance(timestamp, str) else timestamp
+        hours = int(float(hours_backward))
+        end_time = start_time - timedelta(hours=hours)
+        region = get_region(lon, lat)
+        profile = REGIONAL_PROFILES[region]
         
-        for i in range(num_ensemble):
-            traj = run_single_drift_simulation(lon, lat, hours_backward, windage=windages[i], noise_scale=noises[i])
-            all_trajectories.append(traj)
-            all_endpoints.append(traj[-1])
+        all_trajectories = []
+        for _ in range(num_ensemble):
+            perturbation = random.uniform(0.8, 1.2)
+            windage = 0.03 * random.uniform(0.8, 1.2)
+            drift_x = (profile["current_x"] * perturbation) + (profile["wind_x"] * windage)
+            drift_y = (profile["current_y"] * perturbation) + (profile["wind_y"] * windage)
             
-        mean_lon = sum(p[0] for p in all_endpoints) / num_ensemble
-        mean_lat = sum(p[1] for p in all_endpoints) / num_ensemble
-        uncertainty_deg = math.sqrt(sum((p[0]-mean_lon)**2 + (p[1]-mean_lat)**2 for p in all_endpoints) / num_ensemble)
-        uncertainty_km = max(2.5, uncertainty_deg * 111.0)
+            coordinates = []
+            particles = [{"lon": float(lon) + random.uniform(-0.001, 0.001), "lat": float(lat) + random.uniform(-0.001, 0.001)} for _ in range(15)]
+            
+            for _ in range(hours + 1):
+                mean_lon = sum(p["lon"] for p in particles) / len(particles)
+                mean_lat = sum(p["lat"] for p in particles) / len(particles)
+                coordinates.append([round(mean_lon, 5), round(mean_lat, 5)])
+                for p in particles:
+                    p["lon"] -= (drift_x * 3600) / 111320 + random.uniform(-0.002, 0.002)
+                    p["lat"] -= (drift_y * 3600) / 110540 + random.uniform(-0.002, 0.002)
+            all_trajectories.append(coordinates[::-1])
+            
+        source_points = [traj[-1] for traj in all_trajectories if len(traj) > 0]
+        mean_source_lon = sum(p[0] for p in source_points) / len(source_points)
+        mean_source_lat = sum(p[1] for p in source_points) / len(source_points)
+        uncertainty_km = round(max(haversine(mean_source_lat, mean_source_lon, p[1], p[0]) for p in source_points), 2)
         
-        radius_deg = (uncertainty_km / 111.0) * 1.5
-        source_polygon_coords = [[mean_lon + radius_deg * math.cos(2 * math.pi * i / 16), mean_lat + radius_deg * math.sin(2 * math.pi * i / 16)] for i in range(16)]
-        source_polygon_coords.append(source_polygon_coords[0])
-        
+        mean_trajectory = [[round(sum(traj[i][0] for traj in all_trajectories)/len(all_trajectories), 5), round(sum(traj[i][1] for traj in all_trajectories)/len(all_trajectories), 5)] for i in range(len(all_trajectories[0]))]
+
         return {
-            "engine": "deterministic_fallback", "region_detected": get_region(lon, lat),
-            "centroid": [round(mean_lon, 5), round(mean_lat, 5)], "uncertainty_km": round(uncertainty_km, 2),
-            "confidence_level": 0.90, "ensemble_count": num_ensemble,
-            "source_polygon": {"type": "Polygon", "coordinates": [source_polygon_coords]},
-            "trajectories": all_trajectories[:3], "estimated_source_time": end_time.isoformat() + "Z",
-            "data_classification": "SIMULATED"
+            "engine": "fallback_ensemble", "ensemble_count": num_ensemble,
+            "drift_path": {"type": "LineString", "coordinates": mean_trajectory},
+            "source_polygon": {"type": "Polygon", "coordinates": [[[mean_source_lon - (uncertainty_km/111), mean_source_lat - (uncertainty_km/111)], [mean_source_lon + (uncertainty_km/111), mean_source_lat - (uncertainty_km/111)], [mean_source_lon + (uncertainty_km/111), mean_source_lat + (uncertainty_km/111)], [mean_source_lon - (uncertainty_km/111), mean_source_lat + (uncertainty_km/111)], [mean_source_lon - (uncertainty_km/111), mean_source_lat - (uncertainty_km/111)]]]},
+            "estimated_source_time": end_time.isoformat(), "region_detected": region,
+            "uncertainty": {"radius_km": uncertainty_km, "confidence_level": 0.90, "centroid": [round(mean_source_lon, 5), round(mean_source_lat, 5)]}
         }
     except Exception as e:
-        return {"error": str(e), "engine": "failed"}
+        logger.error(f"Drift service error: {str(e)}")
+        return {"engine": "fallback_error", "uncertainty": {"radius_km": 10.0, "confidence_level": 0.50, "centroid": [float(lon), float(lat)]}}
 

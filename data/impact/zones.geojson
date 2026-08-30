@@ -1,8 +1,0 @@
-{
-  "type": "FeatureCollection",
-  "features": [
-    {"type": "Feature", "properties": {"name": "Lakshadweep Marine Sanctuary", "zone_type": "Coral Reefs", "vulnerability_score": 0.95}, "geometry": {"type": "Point", "coordinates": [72.6, 10.5]}},
-    {"type": "Feature", "properties": {"name": "Coastal Fishing Zone Alpha", "zone_type": "Fishing", "vulnerability_score": 0.75}, "geometry": {"type": "Point", "coordinates": [72.8, 12.0]}}
-  ]
-}
-

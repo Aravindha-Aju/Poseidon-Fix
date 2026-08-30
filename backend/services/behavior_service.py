@@ -1,58 +1,56 @@
-# -*- coding: utf-8 -*-
-import math
 from datetime import datetime
 from typing import List, Dict, Any
+import math
 
-def haversine(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
-    R = 6371.0
-    lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
-    dlon, dlat = lon2 - lon1, lat2 - lat1
-    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat, dlon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
-def calculate_speed_knots(coord1, coord2, time1: str, time2: str) -> float:
-    dist_km = haversine(coord1[0], coord1[1], coord2[0], coord2[1])
-    t1 = datetime.fromisoformat(time1.replace('Z', '+00:00'))
-    t2 = datetime.fromisoformat(time2.replace('Z', '+00:00'))
-    hours = abs((t2 - t1).total_seconds() / 3600.0)
-    return (dist_km / hours) / 1.852 if hours > 0 else 0.0
-
-def analyze_behavior(trajectory: List[List[float]], timestamps: List[str], target_time: str) -> Dict[str, Any]:
-    if len(trajectory) < 2 or len(timestamps) < 2:
-        return {"error": "Insufficient trajectory data"}
+def analyze_vessel_behavior(trajectory: List[Dict[str, Any]], source_time: datetime, source_location: Dict[str, float]) -> Dict[str, Any]:
+    if len(trajectory) < 2: return {"error": "Insufficient data"}
+    
+    points_near = [(i, p, abs((datetime.fromisoformat(p["time"].replace("Z", "+00:00")) - source_time).total_seconds() / 3600)) for i, p in enumerate(trajectory) if abs((datetime.fromisoformat(p["time"].replace("Z", "+00:00")) - source_time).total_seconds() / 3600) <= 2.0]
+    if not points_near: return {"error": "No points near source time"}
+    
+    speeds = []
+    for i in range(1, len(trajectory)):
+        t1, t2 = datetime.fromisoformat(trajectory[i-1]["time"].replace("Z", "+00:00")), datetime.fromisoformat(trajectory[i]["time"].replace("Z", "+00:00"))
+        hrs = (t2 - t1).total_seconds() / 3600
+        if hrs > 0: speeds.append(haversine(trajectory[i-1]["lat"], trajectory[i-1]["lon"], trajectory[i]["lat"], trajectory[i]["lon"]) / hrs)
+    normal_speed = sum(speeds) / len(speeds) if speeds else 15.0
+    
+    src_speeds = []
+    for i, p, _ in points_near:
+        if i > 0:
+            t1, t2 = datetime.fromisoformat(trajectory[i-1]["time"].replace("Z", "+00:00")), datetime.fromisoformat(p["time"].replace("Z", "+00:00"))
+            hrs = (t2 - t1).total_seconds() / 3600
+            if hrs > 0: src_speeds.append(haversine(trajectory[i-1]["lat"], trajectory[i-1]["lon"], p["lat"], p["lon"]) / hrs)
+    src_speed = sum(src_speeds) / len(src_speeds) if src_speeds else normal_speed
     
     ais_gaps = []
-    for i in range(len(timestamps) - 1):
-        t1 = datetime.fromisoformat(timestamps[i].replace('Z', '+00:00'))
-        t2 = datetime.fromisoformat(timestamps[i+1].replace('Z', '+00:00'))
-        gap_hours = (t2 - t1).total_seconds() / 3600.0
-        if gap_hours > 1.5:
-            ais_gaps.append({"start": timestamps[i], "end": timestamps[i+1], "duration_hours": round(gap_hours, 2)})
+    for i in range(1, len(trajectory)):
+        if not trajectory[i]["ais_active"] and trajectory[i-1]["ais_active"]:
+            gap_end = i
+            for j in range(i, len(trajectory)):
+                if not trajectory[j]["ais_active"]: gap_end = j
+                else: break
+            t_start = datetime.fromisoformat(trajectory[i-1]["time"].replace("Z", "+00:00"))
+            t_end = datetime.fromisoformat(trajectory[gap_end]["time"].replace("Z", "+00:00"))
+            ais_gaps.append({
+                "start_time": trajectory[i-1]["time"], "end_time": trajectory[gap_end]["time"], 
+                "duration_hours": round((t_end - t_start).total_seconds() / 3600, 2), 
+                "overlaps_source_window": abs((t_start - source_time).total_seconds() / 3600) <= 2.0 or abs((t_end - source_time).total_seconds() / 3600) <= 2.0
+            })
     
-    speeds = [calculate_speed_knots(trajectory[i], trajectory[i+1], timestamps[i], timestamps[i+1]) for i in range(len(trajectory) - 1)]
-    avg_speed = sum(speeds) / len(speeds) if speeds else 0.0
-    min_speed = min(speeds) if speeds else 0.0
+    is_dark = len(ais_gaps) > 0 and any(g["overlaps_source_window"] for g in ais_gaps)
+    min_dist = min((haversine(p["lat"], p["lon"], source_location["lat"], source_location["lon"]) for _, p, _ in points_near), default=100.0)
     
-    target_dt = datetime.fromisoformat(target_time.replace('Z', '+00:00'))
-    gap_overlaps = False
-    overlapping_gap = None
-    for gap in ais_gaps:
-        g_start = datetime.fromisoformat(gap["start"].replace('Z', '+00:00'))
-        g_end = datetime.fromisoformat(gap["end"].replace('Z', '+00:00'))
-        if g_start <= target_dt <= g_end:
-            gap_overlaps = True
-            overlapping_gap = gap
-            break
-            
     return {
-        "avg_speed_knots": round(avg_speed, 2),
-        "min_speed_knots": round(min_speed, 2),
-        "speed_drop_knots": round(avg_speed - min_speed, 2),
-        "loitering_detected": min_speed < 3.0 and len(speeds) > 2,
-        "ais_gaps": ais_gaps,
-        "is_dark_vessel": gap_overlaps,
-        "dark_vessel_reason": "AIS gap overlaps probable spill-source window" if gap_overlaps else None,
-        "overlapping_gap": overlapping_gap,
-        "data_classification": "INFERRED"
+        "normal_speed_knots": round(normal_speed, 2), "source_window_speed_knots": round(src_speed, 2),
+        "speed_drop_knots": round(normal_speed - src_speed, 2), "min_distance_to_source_km": round(min_dist, 2),
+        "ais_gaps": ais_gaps, "is_dark_vessel": is_dark,
+        "suspicious_behavior_detected": (normal_speed - src_speed) > 3.0 or is_dark or min_dist < 5.0
     }
 

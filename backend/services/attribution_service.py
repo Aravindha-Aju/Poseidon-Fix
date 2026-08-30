@@ -1,40 +1,44 @@
-# -*- coding: utf-8 -*-
-import math
 from typing import List, Dict, Any
-from shapely.geometry import shape, Point
 
-def haversine_km(lon1, lat1, lon2, lat2):
-    R, lon1, lat1, lon2, lat2 = 6371.0, *map(math.radians, [lon1, lat1, lon2, lat2])
-    a = math.sin((lat2-lat1)/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2-lon1)/2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-def score_spatial(vessel, centroid):
-    min_dist = min(haversine_km(c[0], c[1], centroid[0], centroid[1]) for c in vessel["trajectory"])
-    return 100 if min_dist < 2.0 else 85 if min_dist < 5.0 else 60 if min_dist < 10.0 else 30
-
-def calculate_attribution(vessels, drift_result, behavior_results, target_time):
-    centroid, source_poly = drift_result["centroid"], drift_result["source_polygon"]
-    ranked = []
-    for v in vessels:
-        behav = behavior_results.get(v["mmsi"], {})
-        s_spatial = score_spatial(v, centroid)
-        s_temporal = 85 if behav.get("ais_gaps") else 50
-        s_behavior = min(100, 50 + (20 if behav.get("speed_drop_knots", 0) > 3.0 else 0) + (15 if behav.get("loitering_detected") else 0) + (15 if behav.get("is_dark_vessel") else 0))
-        s_drift = 90 if any(Point(c[0], c[1]).within(shape(source_poly)) for c in v["trajectory"]) else 40
-        overall = int(s_spatial * 0.25 + s_temporal * 0.20 + s_behavior * 0.25 + s_drift * 0.20 + 50 * 0.10)
-        ranked.append({"mmsi": v["mmsi"], "name": v["name"], "vessel_type": v["vessel_type"], "overall_score": overall,
-            "factors": {"spatial": s_spatial, "temporal": s_temporal, "trajectory": s_spatial, "drift": s_drift, "behavior": s_behavior, "historical": 50},
-            "behavior_evidence": behav, "data_classification": "INFERRED"})
-    ranked.sort(key=lambda x: x["overall_score"], reverse=True)
-    return ranked
-
-def generate_explanation(top_vessel):
-    name, score, behav = top_vessel["name"], top_vessel["overall_score"], top_vessel["behavior_evidence"]
-    lines = [f"Vessel {name} ranked #1 based on available evidence:"]
-    if top_vessel["factors"]["spatial"] > 70: lines.append("- Entered probable source region during estimated release window.")
-    if top_vessel["factors"]["drift"] > 70: lines.append("- Trajectory intersects high-probability drift corridor.")
-    if behav.get("speed_drop_knots", 0) > 2.0: lines.append(f"- Speed decreased by {behav['speed_drop_knots']} knots near estimated release time.")
-    if behav.get("is_dark_vessel"): lines.append("- AIS gap overlaps part of the critical window.")
-    lines.extend([f"\nOverall attribution confidence score: {score}/100.", "NOTE: This is an investigative lead, not legal proof of guilt."])
-    return "\n".join(lines)
+def calculate_attribution(vessels_behavior: List[Dict[str, Any]], source_zone: Dict[str, Any], source_time: str) -> Dict[str, Any]:
+    rankings = []
+    source_lon, source_lat = source_zone.get("uncertainty", {}).get("centroid", [0.0, 0.0])
+    
+    for vb in vessels_behavior:
+        vessel, behavior = vb["vessel"], vb["behavior"]
+        if "error" in behavior:
+            rankings.append({"mmsi": vessel["mmsi"], "name": vessel["name"], "total_score": 0, "spatial": 0, "temporal": 0, "trajectory": 0, "drift": 0, "behavioral": 0, "ais": 0, "explanation": behavior["error"], "is_dark_vessel": False})
+            continue
+            
+        dist = behavior.get("min_distance_to_source_km", 100)
+        spatial = max(0, 100 - (dist * 5))
+        temporal = 90
+        traj = 50 + (30 if behavior.get("speed_drop_knots", 0) > 2.0 else 0) + (10 if behavior.get("suspicious_behavior_detected", False) else 0)
+        drift = min(100, spatial + 10)
+        behavioral = 50 + (30 if behavior.get("speed_drop_knots", 0) > 4.0 else (15 if behavior.get("speed_drop_knots", 0) > 2.0 else 0))
+        ais = 30 if behavior.get("is_dark_vessel", False) else 80
+            
+        total = spatial*0.25 + temporal*0.15 + traj*0.20 + drift*0.15 + behavioral*0.15 + ais*0.10
+        
+        explanation_parts = []
+        if spatial > 70: explanation_parts.append(f"Passed within {dist:.1f}km of estimated source region.")
+        if behavior.get("speed_drop_knots", 0) > 2.0: explanation_parts.append(f"Speed reduced by {behavior['speed_drop_knots']:.1f} knots near release time.")
+        if behavior.get("is_dark_vessel", False): explanation_parts.append("AIS gap overlaps critical source window.")
+        
+        rankings.append({
+            "mmsi": vessel["mmsi"], "name": vessel["name"], "total_score": round(total, 1),
+            "spatial": round(spatial, 1), "temporal": round(temporal, 1), "trajectory": round(min(100, traj), 1),
+            "drift": round(drift, 1), "behavioral": round(behavioral, 1), "ais": round(ais, 1),
+            "explanation": f"{vessel['name']} is a candidate because: " + " ".join(explanation_parts) if explanation_parts else f"{vessel['name']} was in area but shows no strong indicators.",
+            "is_dark_vessel": behavior.get("is_dark_vessel", False)
+        })
+        
+    rankings.sort(key=lambda x: x["total_score"], reverse=True)
+    top = rankings[0] if rankings else None
+    top_exp = f"VESSEL {top['name']} ranked #1 because:\n• Present during estimated source window.\n• Position falls within high-probability source region (Spatial: {top['spatial']}/100)." if top else ""
+    if top and top["behavioral"] > 60: top_exp += f"\n• Significant speed reduction occurred (Behavioral: {top['behavioral']}/100)."
+    if top and top["is_dark_vessel"]: top_exp += f"\n• AIS gap overlaps critical window (AIS: {top['ais']}/100)."
+    if top: top_exp += f"\n\nAttribution Confidence: {top['total_score']}/100"
+        
+    return {"ranking": rankings, "top_candidate": top, "explanation": top_exp}
 

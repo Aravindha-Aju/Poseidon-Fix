@@ -1,12 +1,42 @@
 {
-  "case_id": "POSEIDON-DEMO-001",
-  "sar_timestamp": "2026-08-30T10:15:00Z",
-  "spill_location": {"lon": 72.6, "lat": 12.4},
+  "case_id": "demo_case_001",
+  "sar_timestamp": "2023-10-15T08:00:00Z",
+  "spill_location": {"lat": 12.4, "lon": 72.6},
+  "region": "Arabian Sea",
+  "weather": {"wind_speed_knots": 12, "current_speed_knots": 0.8, "direction": "SW"},
   "ground_truth": {
-    "source_vessel_mmsi": "419000999",
-    "source_time": "2026-08-30T04:15:00Z",
-    "source_location": {"lon": 72.55, "lat": 12.35}
+    "source_vessel_mmsi": "419000123",
+    "source_location": {"lat": 12.4, "lon": 72.6},
+    "source_time": "2023-10-15T06:30:00Z"
   },
-  "mode": "demo"
+  "vessels": [
+    {
+      "mmsi": "419000123", "name": "MAERSK TITAN", "type": "Oil Tanker",
+      "trajectory": [
+        {"time": "2023-10-15T04:00:00Z", "lat": 12.0, "lon": 72.0, "speed_knots": 14.5, "ais_active": true},
+        {"time": "2023-10-15T05:00:00Z", "lat": 12.2, "lon": 72.3, "speed_knots": 14.8, "ais_active": true},
+        {"time": "2023-10-15T06:00:00Z", "lat": 12.4, "lon": 72.6, "speed_knots": 9.2, "ais_active": true},
+        {"time": "2023-10-15T07:00:00Z", "lat": 12.5, "lon": 72.8, "speed_knots": 8.5, "ais_active": false},
+        {"time": "2023-10-15T08:00:00Z", "lat": 12.6, "lon": 72.9, "speed_knots": 8.0, "ais_active": false},
+        {"time": "2023-10-15T09:00:00Z", "lat": 12.8, "lon": 73.2, "speed_knots": 14.0, "ais_active": true}
+      ]
+    },
+    {
+      "mmsi": "419000124", "name": "GULF STAR", "type": "Cargo",
+      "trajectory": [
+        {"time": "2023-10-15T04:00:00Z", "lat": 16.0, "lon": 70.5, "speed_knots": 15.0, "ais_active": true},
+        {"time": "2023-10-15T06:00:00Z", "lat": 16.4, "lon": 71.1, "speed_knots": 15.2, "ais_active": true},
+        {"time": "2023-10-15T08:00:00Z", "lat": 16.8, "lon": 71.7, "speed_knots": 15.1, "ais_active": true}
+      ]
+    },
+    {
+      "mmsi": "419000125", "name": "ARABIAN PEARL", "type": "Container Ship",
+      "trajectory": [
+        {"time": "2023-10-15T04:00:00Z", "lat": 14.0, "lon": 72.0, "speed_knots": 16.0, "ais_active": true},
+        {"time": "2023-10-15T06:00:00Z", "lat": 14.4, "lon": 71.4, "speed_knots": 15.8, "ais_active": true},
+        {"time": "2023-10-15T08:00:00Z", "lat": 14.8, "lon": 70.8, "speed_knots": 16.1, "ais_active": true}
+      ]
+    }
+  ]
 }
 
