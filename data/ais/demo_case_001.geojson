@@ -1,0 +1,26 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {"mmsi": "419000999", "name": "OCEAN PIONEER", "vessel_type": "TANKER", "flag": "IND", "imo": "9876543"},
+      "geometry": {"type": "LineString", "coordinates": [[72.50, 12.30], [72.52, 12.32], [72.56, 12.36], [72.58, 12.38], [72.60, 12.40]]}
+    },
+    {
+      "type": "Feature",
+      "properties": {"mmsi": "419000123", "name": "MAERSK TITAN", "vessel_type": "CONTAINER", "flag": "DNK", "imo": "9123456"},
+      "geometry": {"type": "LineString", "coordinates": [[70.0, 15.0], [70.2, 15.2], [70.4, 15.4], [70.6, 15.6]]}
+    },
+    {
+      "type": "Feature",
+      "properties": {"mmsi": "419000124", "name": "GULF STAR", "vessel_type": "BULK CARRIER", "flag": "LBR", "imo": "9234567"},
+      "geometry": {"type": "LineString", "coordinates": [[72.65, 12.45], [72.66, 12.46], [72.67, 12.47], [72.68, 12.48]]}
+    },
+    {
+      "type": "Feature",
+      "properties": {"mmsi": "419000125", "name": "SHADOW RUNNER", "vessel_type": "TANKER", "flag": "PAN", "imo": "9345678"},
+      "geometry": {"type": "LineString", "coordinates": [[73.0, 13.0], [73.5, 13.5]]}
+    }
+  ]
+}
+

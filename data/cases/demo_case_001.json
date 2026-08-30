@@ -1,0 +1,12 @@
+{
+  "case_id": "POSEIDON-DEMO-001",
+  "sar_timestamp": "2026-08-30T10:15:00Z",
+  "spill_location": {"lon": 72.6, "lat": 12.4},
+  "ground_truth": {
+    "source_vessel_mmsi": "419000999",
+    "source_time": "2026-08-30T04:15:00Z",
+    "source_location": {"lon": 72.55, "lat": 12.35}
+  },
+  "mode": "demo"
+}
+
